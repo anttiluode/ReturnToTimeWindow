@@ -35,7 +35,6 @@ def run_g1(seed: int, *, noise_sd: float = 0.30) -> dict:
     from .rhythm import RhythmicAdmission, matched_tonic, with_inhibition
     from .sequence import identity_controls
     from .metrics import secondary_wave_events
-
     n = 40
     rep = encode_repertoire([[str(i) for i in range(n)]])
     W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
@@ -46,197 +45,102 @@ def run_g1(seed: int, *, noise_sd: float = 0.30) -> dict:
     times = np.arange(steps) * cfg.dt_s
     admission = RhythmicAdmission()
     base = identity_controls(steps, n)
-    arms = {
-        "rhythmic": with_inhibition(base, admission.inhibition(times)),
-        "tonic": with_inhibition(base, matched_tonic(admission, times)),
-    }
-    expected = list(rep.sequences[0])
-    result = {}
+    arms = {"rhythmic": with_inhibition(base, admission.inhibition(times)), "tonic": with_inhibition(base, matched_tonic(admission, times))}
+    expected = list(rep.sequences[0]); result = {}
     for name, controls in arms.items():
         tr = simulate_replay(W, duration_s, cfg, np.random.default_rng(seed + 20_000), external_drive=ext, controls=controls)
-        score = _score_linear(tr, expected)
-        score["secondary_waves"] = secondary_wave_events(tr.internal, expected)
-        result[name] = score
+        score = _score_linear(tr, expected); score["secondary_waves"] = secondary_wave_events(tr.internal, expected); result[name] = score
     result["delta_full_replay"] = result["rhythmic"]["full_replay"] - result["tonic"]["full_replay"]
     return result
 
 
 def _branched_repertoire():
-    return encode_repertoire([
-        ["A", "B", "C", "D", "E", "F", "G"],
-        ["A", "B", "C", "H", "I", "J", "K"],
-    ])
+    return encode_repertoire([["A","B","C","D","E","F","G"],["A","B","C","H","I","J","K"]])
 
 
 def _branch_trial(W, rep, seed, *, target: str, mode: str, strength: float, external: bool = True, onset: float = 0.015, end: float = 0.12):
     from .context import ContextWindow, multiplicative_gain, additive_drive, with_multiplicative_context, with_additive_context
     from .sequence import identity_controls
-
-    cfg = ReplayConfig()
-    duration = 0.35
-    steps = int(duration / cfg.dt_s)
-    times = np.arange(steps) * cfg.dt_s
-    base = identity_controls(steps, len(rep.tokens))
-    win = ContextWindow(onset, end, (rep.token_to_id[target],), strength)
-    if mode == "multiplicative":
-        controls = with_multiplicative_context(base, multiplicative_gain(times, len(rep.tokens), [win]))
-    elif mode == "additive":
-        controls = with_additive_context(base, additive_drive(times, len(rep.tokens), [win]))
-    else:
-        raise ValueError(mode)
-    ext = None
-    if external:
-        ext = cue_drive(steps, len(rep.tokens), cfg.dt_s, [(0.0, 0.05, rep.token_to_id["A"], 1.5)])
-    tr = simulate_replay(W, duration, cfg, np.random.default_rng(seed), external_drive=ext, controls=controls)
-    d = rep.token_to_id["D"]
-    h = rep.token_to_id["H"]
-    after = times >= onset
-    pd = float(tr.internal[d, after].max(initial=0.0))
-    ph = float(tr.internal[h, after].max(initial=0.0))
-    winner = "D" if pd > ph else "H" if ph > pd else "tie"
-    return tr, {"winner": winner, "D_peak": pd, "H_peak": ph, "selectivity": abs(pd - ph)}
+    cfg = ReplayConfig(); duration = 0.35; steps = int(duration/cfg.dt_s); times=np.arange(steps)*cfg.dt_s; base=identity_controls(steps,len(rep.tokens))
+    win=ContextWindow(onset,end,(rep.token_to_id[target],),strength)
+    if mode=="multiplicative": controls=with_multiplicative_context(base,multiplicative_gain(times,len(rep.tokens),[win]))
+    elif mode=="additive": controls=with_additive_context(base,additive_drive(times,len(rep.tokens),[win]))
+    else: raise ValueError(mode)
+    ext=None if not external else cue_drive(steps,len(rep.tokens),cfg.dt_s,[(0.0,0.05,rep.token_to_id["A"],1.5)])
+    tr=simulate_replay(W,duration,cfg,np.random.default_rng(seed),external_drive=ext,controls=controls)
+    d,h=rep.token_to_id["D"],rep.token_to_id["H"]; after=times>=onset; pd=float(tr.internal[d,after].max(initial=0.0)); ph=float(tr.internal[h,after].max(initial=0.0)); winner="D" if pd>ph else "H" if ph>pd else "tie"
+    return tr,{"winner":winner,"D_peak":pd,"H_peak":ph,"selectivity":abs(pd-ph)}
 
 
-def run_g2(seed: int) -> dict:
-    rep = _branched_repertoire()
-    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
-    mult = {}
-    leaks = []
-    for target in ("D", "H"):
-        _, score = _branch_trial(W, rep, seed + 30_000, target=target, mode="multiplicative", strength=2.0)
-        mult[target] = score
-        tr0, _ = _branch_trial(np.zeros_like(W), rep, seed + 30_000, target=target, mode="multiplicative", strength=2.0, external=False)
-        leaks.append(float(tr0.internal.max(initial=0.0)))
-    mult_success = float(np.mean([mult[t]["winner"] == t for t in ("D", "H")]))
-
-    points = []
-    for strength in (0.0, 0.05, 0.10, 0.20, 0.40, 0.80, 1.20, 2.0):
-        success = []
-        leak = []
-        sels = []
-        for target in ("D", "H"):
-            _, score = _branch_trial(W, rep, seed + 31_000, target=target, mode="additive", strength=strength)
-            success.append(score["winner"] == target)
-            sels.append(score["selectivity"])
-            tr0, _ = _branch_trial(np.zeros_like(W), rep, seed + 31_000, target=target, mode="additive", strength=strength, external=False)
-            leak.append(float(tr0.internal.max(initial=0.0)))
-        points.append({
-            "strength": float(strength),
-            "branch_success": float(np.mean(success)),
-            "mean_selectivity": float(np.mean(sels)),
-            "context_only_peak": float(max(leak)),
-        })
-    return {
-        "multiplicative": mult,
-        "multiplicative_branch_success": mult_success,
-        "multiplicative_context_only_peak": float(max(leaks)),
-        "additive_sweep": points,
-    }
+def run_g2(seed:int)->dict:
+    rep=_branched_repertoire(); W=learn_repertoire(rep,np.random.default_rng(seed),windows_per_sequence=30); mult={}; leaks=[]
+    for target in ("D","H"):
+        _,score=_branch_trial(W,rep,seed+30_000,target=target,mode="multiplicative",strength=2.0); mult[target]=score
+        tr0,_=_branch_trial(np.zeros_like(W),rep,seed+30_000,target=target,mode="multiplicative",strength=2.0,external=False); leaks.append(float(tr0.internal.max(initial=0.0)))
+    mult_success=float(np.mean([mult[t]["winner"]==t for t in ("D","H")]))
+    points=[]
+    for strength in (0.0,0.05,0.10,0.20,0.40,0.80,1.20,2.0):
+        success=[]; leak=[]; sels=[]
+        for target in ("D","H"):
+            _,score=_branch_trial(W,rep,seed+31_000,target=target,mode="additive",strength=strength); success.append(score["winner"]==target); sels.append(score["selectivity"])
+            tr0,_=_branch_trial(np.zeros_like(W),rep,seed+31_000,target=target,mode="additive",strength=strength,external=False); leak.append(float(tr0.internal.max(initial=0.0)))
+        points.append({"strength":float(strength),"branch_success":float(np.mean(success)),"mean_selectivity":float(np.mean(sels)),"context_only_peak":float(max(leak))})
+    return {"multiplicative":mult,"multiplicative_branch_success":mult_success,"multiplicative_context_only_peak":float(max(leaks)),"additive_sweep":points}
 
 
-def _g3_trial(W, rep, seed, *, context_windows, veto_windows, rhythmic=True, tonic_veto=False):
-    from .context import combine_multiplicative_contexts, with_multiplicative_context
-    from .rhythm import RhythmicAdmission, with_inhibition
-    from .veto import veto_gain, with_veto
+def _g3_trial(W,rep,seed,*,context_windows,veto_windows,rhythmic=True,tonic_veto=False):
+    from .context import combine_multiplicative_contexts,with_multiplicative_context
+    from .rhythm import RhythmicAdmission,with_inhibition
+    from .veto import veto_gain,with_veto
     from .sequence import identity_controls
-
-    cfg = ReplayConfig()
-    duration = 0.35
-    steps = int(duration / cfg.dt_s)
-    times = np.arange(steps) * cfg.dt_s
-    base = identity_controls(steps, len(rep.tokens))
-    if rhythmic:
-        admission = RhythmicAdmission(phase_s=0.015)
-        base = with_inhibition(base, admission.inhibition(times))
-    cg = combine_multiplicative_contexts(times, len(rep.tokens), context_windows)
-    controls = with_multiplicative_context(base, cg)
-    vg = veto_gain(times, len(rep.tokens), veto_windows)
+    cfg=ReplayConfig(); duration=.35; steps=int(duration/cfg.dt_s); times=np.arange(steps)*cfg.dt_s; base=identity_controls(steps,len(rep.tokens))
+    if rhythmic: base=with_inhibition(base,RhythmicAdmission(phase_s=.015).inhibition(times))
+    controls=with_multiplicative_context(base,combine_multiplicative_contexts(times,len(rep.tokens),context_windows)); vg=veto_gain(times,len(rep.tokens),veto_windows)
     if tonic_veto and veto_windows:
-        w = veto_windows[0]
-        area = max(0.0, w.end_s - w.start_s) * w.suppression
-        dur = 0.040
-        suppression = min(1.0, area / dur)
+        w=veto_windows[0]; area=max(0.0,w.end_s-w.start_s)*w.suppression; dur=.040; suppression=min(1.0,area/dur)
         from .veto import VetoWindow
-        vg = veto_gain(times, len(rep.tokens), [VetoWindow(0.020, 0.020 + dur, w.target_ids, suppression)])
-    controls = with_veto(controls, vg)
-    ext = cue_drive(steps, len(rep.tokens), cfg.dt_s, [(0.0, 0.05, rep.token_to_id["A"], 1.5)])
-    tr = simulate_replay(W, duration, cfg, np.random.default_rng(seed), external_drive=ext, controls=controls)
-    D, H = rep.token_to_id["D"], rep.token_to_id["H"]
-    after = times >= 0.020
-    pd = float(tr.internal[D, after].max(initial=0.0))
-    ph = float(tr.internal[H, after].max(initial=0.0))
-    winner = "D" if pd > ph else "H" if ph > pd else "tie"
-    return tr, {"winner": winner, "D_peak": pd, "H_peak": ph, "selectivity_signed_H_minus_D": ph - pd}
+        vg=veto_gain(times,len(rep.tokens),[VetoWindow(.020,.020+dur,w.target_ids,suppression)])
+    controls=with_veto(controls,vg); ext=cue_drive(steps,len(rep.tokens),cfg.dt_s,[(0.0,.05,rep.token_to_id["A"],1.5)])
+    tr=simulate_replay(W,duration,cfg,np.random.default_rng(seed),external_drive=ext,controls=controls); D,H=rep.token_to_id["D"],rep.token_to_id["H"]; after=times>=.020; pd=float(tr.internal[D,after].max(initial=0.0)); ph=float(tr.internal[H,after].max(initial=0.0)); winner="D" if pd>ph else "H" if ph>pd else "tie"
+    return tr,{"winner":winner,"D_peak":pd,"H_peak":ph,"selectivity_signed_H_minus_D":ph-pd}
 
 
-def run_g3(seed: int) -> dict:
+def run_g3(seed:int)->dict:
     from .context import ContextWindow
     from .veto import VetoWindow
-
-    rep = _branched_repertoire()
-    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
-    W_before = W.tobytes()
-    D, H = rep.token_to_id["D"], rep.token_to_id["H"]
-    relevant_context = [ContextWindow(0.000, 0.020, (D,), 3.0), ContextWindow(0.020, 0.120, (H,), 0.5)]
-    relevant_veto = [VetoWindow(0.020, 0.030, (D,), 1.0)]
-    tr_rel, rel = _g3_trial(W, rep, seed + 40_000, context_windows=relevant_context, veto_windows=relevant_veto)
-    times = tr_rel.time
-    vm = (times >= 0.020) & (times < 0.030)
-    rel["state_survival_norm"] = float(np.linalg.norm(tr_rel.internal[:, vm]))
-    h_cross = np.flatnonzero((times >= 0.030) & (tr_rel.internal[H] > 0.2))
-    rel["restart_latency_s"] = float(times[h_cross[0]] - 0.030) if len(h_cross) else float(times[-1] - 0.030)
-    rel["new_external_cue"] = False
-
-    d_context = [ContextWindow(0.000, 0.120, (D,), 3.0)]
-    irrelevant_veto = [VetoWindow(0.030, 0.040, (D,), 1.0)]
-    tr_irr, irr = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=irrelevant_veto)
-    tr_base, base = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=[])
-    irr["effect"] = float(abs(irr["selectivity_signed_H_minus_D"] - base["selectivity_signed_H_minus_D"]))
-
-    _, tonic = _g3_trial(W, rep, seed + 40_000, context_windows=relevant_context, veto_windows=relevant_veto, tonic_veto=True)
-    full_reset_latency = float(times[-1] - 0.030)
-    return {
-        "relevant": rel,
-        "irrelevant": irr,
-        "tonic_matched": tonic,
-        "full_reset": {"winner": "none", "restart_latency_s": full_reset_latency},
-        "weights_unchanged": bool(W.tobytes() == W_before),
-    }
+    rep=_branched_repertoire(); W=learn_repertoire(rep,np.random.default_rng(seed),windows_per_sequence=30); W_before=W.tobytes(); D,H=rep.token_to_id["D"],rep.token_to_id["H"]
+    relevant_context=[ContextWindow(.000,.020,(D,),3.0),ContextWindow(.020,.120,(H,),.5)]; relevant_veto=[VetoWindow(.020,.030,(D,),1.0)]
+    tr_rel,rel=_g3_trial(W,rep,seed+40_000,context_windows=relevant_context,veto_windows=relevant_veto); times=tr_rel.time; vm=(times>=.020)&(times<.030); rel["state_survival_norm"]=float(np.linalg.norm(tr_rel.internal[:,vm])); h_cross=np.flatnonzero((times>=.030)&(tr_rel.internal[H]>.2)); rel["restart_latency_s"]=float(times[h_cross[0]]-.030) if len(h_cross) else float(times[-1]-.030); rel["new_external_cue"]=False
+    d_context=[ContextWindow(.000,.120,(D,),3.0)]; irrelevant_veto=[VetoWindow(.030,.040,(D,),1.0)]; _,irr=_g3_trial(W,rep,seed+40_000,context_windows=d_context,veto_windows=irrelevant_veto); _,base=_g3_trial(W,rep,seed+40_000,context_windows=d_context,veto_windows=[]); irr["effect"]=float(abs(irr["selectivity_signed_H_minus_D"]-base["selectivity_signed_H_minus_D"])); _,tonic=_g3_trial(W,rep,seed+40_000,context_windows=relevant_context,veto_windows=relevant_veto,tonic_veto=True); full_reset_latency=float(times[-1]-.030)
+    return {"relevant":rel,"irrelevant":irr,"tonic_matched":tonic,"full_reset":{"winner":"none","restart_latency_s":full_reset_latency},"weights_unchanged":bool(W.tobytes()==W_before)}
 
 
-def run_g4(seed: int) -> dict:
-    from .publication import PublicationBlock, InternalShunt, publication_mask, internal_shunt, with_publication, with_internal_shunt
+def run_g4(seed:int)->dict:
+    from .publication import PublicationBlock,InternalShunt,publication_mask,internal_shunt,with_publication,with_internal_shunt
     from .sequence import identity_controls
     from .metrics import front_position
+    n=20; rep=encode_repertoire([[str(i) for i in range(n)]]); W=learn_repertoire(rep,np.random.default_rng(seed),windows_per_sequence=30); cfg=ReplayConfig(); duration=.45; steps=int(duration/cfg.dt_s); times=np.arange(steps)*cfg.dt_s; ext=cue_drive(steps,n,cfg.dt_s,[(0.0,.05,0,1.5)]); base=identity_controls(steps,n); block=PublicationBlock(.04,.10); silent_controls=with_publication(base,publication_mask(times,[block])); shunt_controls=with_internal_shunt(base,internal_shunt(times,[InternalShunt(.04,.10)])); tr_base=simulate_replay(W,duration,cfg,np.random.default_rng(seed+50_000),external_drive=ext,controls=base); tr_silent=simulate_replay(W,duration,cfg,np.random.default_rng(seed+50_000),external_drive=ext,controls=silent_controls); tr_shunt=simulate_replay(W,duration,cfg,np.random.default_rng(seed+50_000),external_drive=ext,controls=shunt_controls); expected=list(rep.sequences[0]); f_silent=front_position(tr_silent.internal,expected); f_shunt=front_position(tr_shunt.internal,expected); i0=np.searchsorted(times,block.start_s); i1=max(i0,np.searchsorted(times,block.end_s)-1); release=min(len(times)-1,np.searchsorted(times,block.end_s+cfg.dt_s)); advanced=max(0,int(f_silent[i1]-f_silent[i0]))
+    return {"items_advanced_during_silence":float(advanced),"release_front":int(f_silent[release]),"shunt_release_front":int(f_shunt[release]),"shunt_lag":int(f_silent[release]-f_shunt[release]),"internal_trace_equal":bool(np.array_equal(tr_base.internal,tr_silent.internal)),"public_silent":bool(np.all(tr_silent.public[:,(times>=block.start_s)&(times<block.end_s)]==0.0))}
 
-    n = 20
-    rep = encode_repertoire([[str(i) for i in range(n)]])
-    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
-    cfg = ReplayConfig()
-    duration = 0.45
-    steps = int(duration / cfg.dt_s)
-    times = np.arange(steps) * cfg.dt_s
-    ext = cue_drive(steps, n, cfg.dt_s, [(0.0, 0.05, 0, 1.5)])
-    base = identity_controls(steps, n)
-    block = PublicationBlock(0.04, 0.10)
-    silent_controls = with_publication(base, publication_mask(times, [block]))
-    shunt_controls = with_internal_shunt(base, internal_shunt(times, [InternalShunt(0.04, 0.10)]))
 
-    tr_base = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=base)
-    tr_silent = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=silent_controls)
-    tr_shunt = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=shunt_controls)
-    expected = list(rep.sequences[0])
-    f_silent = front_position(tr_silent.internal, expected)
-    f_shunt = front_position(tr_shunt.internal, expected)
-    i0 = np.searchsorted(times, block.start_s)
-    i1 = max(i0, np.searchsorted(times, block.end_s) - 1)
-    release = min(len(times) - 1, np.searchsorted(times, block.end_s + cfg.dt_s))
-    advanced = max(0, int(f_silent[i1] - f_silent[i0]))
-    return {
-        "items_advanced_during_silence": float(advanced),
-        "release_front": int(f_silent[release]),
-        "shunt_release_front": int(f_shunt[release]),
-        "shunt_lag": int(f_silent[release] - f_shunt[release]),
-        "internal_trace_equal": bool(np.array_equal(tr_base.internal, tr_silent.internal)),
-        "public_silent": bool(np.all(tr_silent.public[:, (times >= block.start_s) & (times < block.end_s)] == 0.0)),
-    }
+def _g5_trial(W,rep,seed,*,late_target="H",veto_phase="relevant",rhythmic=True,publication=True):
+    from .sequence import identity_controls
+    from .rhythm import RhythmicAdmission,matched_tonic,with_inhibition
+    from .context import ContextWindow,combine_multiplicative_contexts,with_multiplicative_context
+    from .veto import VetoWindow,veto_gain,with_veto
+    from .publication import PublicationBlock,publication_mask,with_publication
+    cfg=ReplayConfig(); duration=.22; steps=int(duration/cfg.dt_s); times=np.arange(steps)*cfg.dt_s; controls=identity_controls(steps,len(rep.tokens)); admission=RhythmicAdmission(phase_s=.015); inh=admission.inhibition(times) if rhythmic else matched_tonic(admission,times); controls=with_inhibition(controls,inh); D,H=rep.token_to_id["D"],rep.token_to_id["H"]; target_id=H if late_target=="H" else D; context_windows=[ContextWindow(.000,.020,(D,),3.0),ContextWindow(.020,.120,(target_id,),.5)]; controls=with_multiplicative_context(controls,combine_multiplicative_contexts(times,len(rep.tokens),context_windows)); veto_window=VetoWindow(.020,.030,(D,),1.0) if veto_phase=="relevant" else VetoWindow(.030,.040,(D,),1.0); controls=with_veto(controls,veto_gain(times,len(rep.tokens),[veto_window]));
+    if publication: controls=with_publication(controls,publication_mask(times,[PublicationBlock(.050,.100)]))
+    ext=cue_drive(steps,len(rep.tokens),cfg.dt_s,[(0.0,.05,rep.token_to_id["A"],1.5)]); tr=simulate_replay(W,duration,cfg,np.random.default_rng(seed),external_drive=ext,controls=controls); after=times>=.020; pd=float(tr.internal[D,after].max(initial=0.0)); ph=float(tr.internal[H,after].max(initial=0.0)); winner="D" if pd>ph else "H" if ph>pd else "tie"; return tr,{"winner":winner,"D_peak":pd,"H_peak":ph}
+
+
+def run_g5(seed:int)->dict:
+    rep=_branched_repertoire(); W=learn_repertoire(rep,np.random.default_rng(seed),windows_per_sequence=30); base_seed=seed+60_000; combined,combined_score=_g5_trial(W,rep,base_seed); pub_removed,_=_g5_trial(W,rep,base_seed,publication=False); context_flip,context_flip_score=_g5_trial(W,rep,base_seed,late_target="D"); veto_irrelevant,_=_g5_trial(W,rep,base_seed,veto_phase="irrelevant"); rhythm_tonic,_=_g5_trial(W,rep,base_seed,rhythmic=False); pre=combined.time<.020
+    invariants={"publication_internal_equal":bool(np.array_equal(combined.internal,pub_removed.internal)),"context_pre_equal":bool(np.array_equal(combined.internal[:,pre],context_flip.internal[:,pre])),"context_rhythm_equal":bool(np.array_equal(combined.inhibition,context_flip.inhibition)),"context_branch_changed":bool(combined_score["winner"]!=context_flip_score["winner"]),"veto_context_equal":bool(np.array_equal(combined.context_gain,veto_irrelevant.context_gain)),"veto_publication_equal":bool(np.array_equal(combined.publication_mask,veto_irrelevant.publication_mask)),"rhythm_context_equal":bool(np.array_equal(combined.context_gain,rhythm_tonic.context_gain)),"rhythm_veto_equal":bool(np.array_equal(combined.veto_gain,rhythm_tonic.veto_gain)),"rhythm_publication_equal":bool(np.array_equal(combined.publication_mask,rhythm_tonic.publication_mask))}
+    four={"publication":invariants["publication_internal_equal"],"context":invariants["context_pre_equal"] and invariants["context_rhythm_equal"] and invariants["context_branch_changed"],"veto":invariants["veto_context_equal"] and invariants["veto_publication_equal"],"rhythm":invariants["rhythm_context_equal"] and invariants["rhythm_veto_equal"] and invariants["rhythm_publication_equal"]}
+    trace={"time":combined.time.tolist(),"internal":combined.internal.tolist(),"public":combined.public.tolist(),"inhibition":combined.inhibition.tolist(),"context_gain":combined.context_gain.tolist(),"veto_gain":combined.veto_gain.tolist(),"publication_mask":combined.publication_mask.tolist(),"token_names":list(rep.tokens)}
+    return {"combined_winner":combined_score["winner"],"invariants":invariants,"selective":four,"trace":trace}
+
+
+def run_seed(seed:int)->dict[str,dict]:
+    return {"g0":run_g0(seed),"g1":run_g1(seed),"g2":run_g2(seed),"g3":run_g3(seed),"g4":run_g4(seed),"g5":run_g5(seed)}
