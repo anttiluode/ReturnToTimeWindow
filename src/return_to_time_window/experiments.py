@@ -60,3 +60,76 @@ def run_g1(seed: int, *, noise_sd: float = 0.30) -> dict:
         result[name] = score
     result["delta_full_replay"] = result["rhythmic"]["full_replay"] - result["tonic"]["full_replay"]
     return result
+
+
+def _branched_repertoire():
+    return encode_repertoire([
+        ["A", "B", "C", "D", "E", "F", "G"],
+        ["A", "B", "C", "H", "I", "J", "K"],
+    ])
+
+
+def _branch_trial(W, rep, seed, *, target: str, mode: str, strength: float, external: bool = True, onset: float = 0.015, end: float = 0.12):
+    from .context import ContextWindow, multiplicative_gain, additive_drive, with_multiplicative_context, with_additive_context
+    from .sequence import identity_controls
+
+    cfg = ReplayConfig()
+    duration = 0.35
+    steps = int(duration / cfg.dt_s)
+    times = np.arange(steps) * cfg.dt_s
+    base = identity_controls(steps, len(rep.tokens))
+    win = ContextWindow(onset, end, (rep.token_to_id[target],), strength)
+    if mode == "multiplicative":
+        controls = with_multiplicative_context(base, multiplicative_gain(times, len(rep.tokens), [win]))
+    elif mode == "additive":
+        controls = with_additive_context(base, additive_drive(times, len(rep.tokens), [win]))
+    else:
+        raise ValueError(mode)
+    ext = None
+    if external:
+        ext = cue_drive(steps, len(rep.tokens), cfg.dt_s, [(0.0, 0.05, rep.token_to_id["A"], 1.5)])
+    tr = simulate_replay(W, duration, cfg, np.random.default_rng(seed), external_drive=ext, controls=controls)
+    d = rep.token_to_id["D"]
+    h = rep.token_to_id["H"]
+    after = times >= onset
+    pd = float(tr.internal[d, after].max(initial=0.0))
+    ph = float(tr.internal[h, after].max(initial=0.0))
+    winner = "D" if pd > ph else "H" if ph > pd else "tie"
+    return tr, {"winner": winner, "D_peak": pd, "H_peak": ph, "selectivity": abs(pd - ph)}
+
+
+def run_g2(seed: int) -> dict:
+    rep = _branched_repertoire()
+    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
+    mult = {}
+    leaks = []
+    for target in ("D", "H"):
+        _, score = _branch_trial(W, rep, seed + 30_000, target=target, mode="multiplicative", strength=2.0)
+        mult[target] = score
+        tr0, _ = _branch_trial(np.zeros_like(W), rep, seed + 30_000, target=target, mode="multiplicative", strength=2.0, external=False)
+        leaks.append(float(tr0.internal.max(initial=0.0)))
+    mult_success = float(np.mean([mult[t]["winner"] == t for t in ("D", "H")]))
+
+    points = []
+    for strength in (0.0, 0.05, 0.10, 0.20, 0.40, 0.80, 1.20, 2.0):
+        success = []
+        leak = []
+        sels = []
+        for target in ("D", "H"):
+            _, score = _branch_trial(W, rep, seed + 31_000, target=target, mode="additive", strength=strength)
+            success.append(score["winner"] == target)
+            sels.append(score["selectivity"])
+            tr0, _ = _branch_trial(np.zeros_like(W), rep, seed + 31_000, target=target, mode="additive", strength=strength, external=False)
+            leak.append(float(tr0.internal.max(initial=0.0)))
+        points.append({
+            "strength": float(strength),
+            "branch_success": float(np.mean(success)),
+            "mean_selectivity": float(np.mean(sels)),
+            "context_only_peak": float(max(leak)),
+        })
+    return {
+        "multiplicative": mult,
+        "multiplicative_branch_success": mult_success,
+        "multiplicative_context_only_peak": float(max(leaks)),
+        "additive_sweep": points,
+    }
