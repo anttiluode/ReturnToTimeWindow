@@ -136,3 +136,46 @@ def run_panel(seeds=range(32), params: WakeParams | None = None):
             "trials": trials,
         }
     return out
+
+
+def run_spatial_trial(seed: int, mode: str = "lateral", params: WakeParams | None = None,
+                      competitor_distance: int = 1):
+    """Two-lane fork control.
+
+    The episode lane fires early at occupied positions. A distinct neighboring
+    schema lane presents its candidate later. The inhibitory rule has no
+    competitor identity: in ``lateral`` mode the wake falls off only with
+    physical distance; ``same_site`` removes cross-lane reach entirely.
+    """
+    p = params or WakeParams()
+    if mode not in {"lateral", "same_site"}:
+        raise ValueError(mode)
+    gaps, _ = _layout(seed, p)
+    arrival = p.episode_phase + p.wake_delay
+    dt = p.schema_phase - arrival
+    temporal = math.exp(-max(dt, 0) / p.wake_tau) if dt >= 0 else 0.0
+    spatial = math.exp(-(max(competitor_distance, 1) - 1) / 0.75)
+    if mode == "same_site":
+        spatial = 0.0
+
+    decisions = []
+    for slot in range(p.n_slots):
+        occupied = slot not in gaps
+        inhibition = min(1.0, p.wake_strength * temporal * spatial) if occupied else 0.0
+        effective_schema = p.schema_basal + p.schema_apical * (1.0 - inhibition)
+        decisions.append({
+            "slot": slot,
+            "gap": not occupied,
+            "inhibition": float(inhibition),
+            "schema_fires": bool(effective_schema >= p.threshold),
+        })
+    occupied_rows = [d for d in decisions if not d["gap"]]
+    gap_rows = [d for d in decisions if d["gap"]]
+    return {
+        "seed": int(seed),
+        "mode": mode,
+        "competitor_distance": int(competitor_distance),
+        "occupied_schema_intrusion_rate": float(np.mean([d["schema_fires"] for d in occupied_rows])),
+        "gap_fill_rate": float(np.mean([d["schema_fires"] for d in gap_rows])),
+        "decisions": decisions,
+    }
