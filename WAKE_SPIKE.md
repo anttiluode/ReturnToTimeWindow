@@ -65,6 +65,35 @@ The spike passes only if all of the following hold:
 
 No parameter changes are allowed after canonical seeds are run. Failure remains a result.
 
+## Canonical result
+
+The frozen canonical panel **passes**:
+
+| condition | occupied schema intrusion | gap fill | selectivity |
+|---|---:|---:|---:|
+| aligned wake | **0.000** | **1.000** | **1.000** |
+| matched tonic | **0.000** | **0.000** | **0.000** |
+| spatial shuffle | 0.907 | 1.000 | 0.093 |
+| temporal shift | 1.000 | 1.000 | 0.000 |
+
+Aligned wake meets the dual criterion in **12/12** canonical seeds. Matched tonic meets it in **0/12**. The decision-time inhibition integral is exactly matched between aligned wake and tonic in every seed, and the shuffled dynamic controls preserve generated wake mass.
+
+The narrow result is therefore real *inside this toy*: **where and when inhibition arrives matters more than its total amount** for simultaneously protecting occupied episode positions and leaving gaps available to schema fill.
+
+## Post-canonical controls: what did *not* earn its keep
+
+Two sweeps were run only after the frozen canonical result.
+
+**Delay.** With every other parameter fixed, delays 1–4 steps retain perfect selectivity; delay 0 and delays 5–8 lose it completely. The mechanism therefore has a finite timing band rather than being equivalent to arbitrary suppression.
+
+**Lateral spread.** Setting immediate-neighbor spread all the way to **0.0** leaves the result unchanged. Increasing it through 1.2 also leaves the result unchanged.
+
+That is an important negative result. This assay has **not** demonstrated a special role for Martinotti-like lateral topology. It has demonstrated a role for **activity-recruited, correctly timed local apical suppression**. The vortex/Martinotti interpretation remains a hypothesis requiring a spatial task in which lateral geometry itself is necessary.
+
+Machine-readable receipt: `results/wake_spike.json`.
+
 ## Interpretation boundary
 
-Even a pass would show only that **activity-recruited delayed local inhibition can implement a useful moving access mask in this constructed threshold model**. It would not show that Martinotti cells carry cortical vortices, that cortical waves arbitrate memory this way, or that the episode/schema decomposition is a biological mechanism.
+Even this pass shows only that **activity-recruited delayed local inhibition can implement a useful moving access mask in this constructed threshold model**. It does not show that Martinotti cells carry cortical vortices, that cortical waves arbitrate memory this way, or that the episode/schema decomposition is a biological mechanism.
+
+The next falsifier should therefore be spatial rather than another threshold sweep: construct competing trajectories in neighboring columns and ask whether a laterally propagating inhibitory field can bend/select the trajectory in a way same-site inhibition cannot.
