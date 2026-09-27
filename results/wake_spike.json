@@ -13,22 +13,10 @@
     "temporal_shift_selectivity": 0.0
   },
   "summary": {
-    "wake": {
-      "mean_intrusion": 0.0,
-      "mean_gap_fill": 1.0
-    },
-    "tonic": {
-      "mean_intrusion": 0.0,
-      "mean_gap_fill": 0.0
-    },
-    "spatial_shuffle": {
-      "mean_intrusion": 0.9074074074074074,
-      "mean_gap_fill": 1.0
-    },
-    "temporal_shift": {
-      "mean_intrusion": 1.0,
-      "mean_gap_fill": 1.0
-    }
+    "wake": {"mean_intrusion": 0.0, "mean_gap_fill": 1.0},
+    "tonic": {"mean_intrusion": 0.0, "mean_gap_fill": 0.0},
+    "spatial_shuffle": {"mean_intrusion": 0.9074074074074074, "mean_gap_fill": 1.0},
+    "temporal_shift": {"mean_intrusion": 1.0, "mean_gap_fill": 1.0}
   },
   "postcanonical_controls": {
     "delay_sweep": [
@@ -50,6 +38,15 @@
       {"neighbor_spread": 0.8, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
       {"neighbor_spread": 1.2, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0}
     ],
-    "interpretation": "The canonical gate supports delayed activity-recruited apical suppression versus matched tonic and shuffled controls. The neighbor-spread sweep shows that lateral spread is not required in this assay, so the result does not establish a special computational role for Martinotti-like lateral topology. The delay sweep shows a finite useful timing band: delays 1-4 work, delay 0 and delays 5-8 do not."
+    "harder_spatial_fork": {
+      "description": "A distinct neighboring schema lane is the competitor. The inhibitory rule has no competitor label and falls off only with physical distance.",
+      "adjacent_distance_1": {"mean_intrusion": 0.0, "mean_gap_fill": 1.0},
+      "distance_2": {"mean_intrusion": 1.0, "mean_gap_fill": 1.0},
+      "distance_3": {"mean_intrusion": 1.0, "mean_gap_fill": 1.0},
+      "distance_4": {"mean_intrusion": 1.0, "mean_gap_fill": 1.0},
+      "same_site_only_control": {"mean_intrusion": 1.0, "mean_gap_fill": 1.0},
+      "interpretation": "Lateral geometry is causally necessary in this constructed two-lane fork: only an adjacent competitor falls inside the fixed spatial kernel. This is an existence proof of generic local lateral inhibition, not evidence for a Martinotti-specific computation."
+    },
+    "interpretation": "The canonical gate supports delayed activity-recruited apical suppression versus matched tonic and shuffled controls. The original one-lane assay did not require neighbor spread. A harder two-lane fork makes lateral geometry necessary by placing the competing schema trajectory in a distinct neighboring column. Timing remains essential: delays 1-4 work, delay 0 and delays 5-8 do not."
   }
 }
