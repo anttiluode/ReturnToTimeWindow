@@ -29,3 +29,18 @@ def test_spatial_shuffle_fails_on_average_without_cherry_picking_a_mapping():
     assert panel['wake']['mean_intrusion'] <= 0.05
     assert panel['wake']['mean_gap_fill'] >= 0.95
     assert panel['spatial_shuffle']['mean_intrusion'] >= 0.5
+
+
+def test_spatial_lateral_wake_suppresses_adjacent_competitor_but_same_site_does_not():
+    from return_to_time_window.wake import run_spatial_trial
+    lateral = run_spatial_trial(seed=0, mode='lateral', params=WakeParams())
+    local = run_spatial_trial(seed=0, mode='same_site', params=WakeParams())
+    assert lateral['occupied_schema_intrusion_rate'] < local['occupied_schema_intrusion_rate']
+    assert lateral['gap_fill_rate'] == 1.0
+
+
+def test_spatial_lateral_effect_depends_on_competitor_distance():
+    from return_to_time_window.wake import run_spatial_trial
+    adjacent = run_spatial_trial(seed=1, mode='lateral', params=WakeParams(), competitor_distance=1)
+    distant = run_spatial_trial(seed=1, mode='lateral', params=WakeParams(), competitor_distance=3)
+    assert adjacent['occupied_schema_intrusion_rate'] < distant['occupied_schema_intrusion_rate']
