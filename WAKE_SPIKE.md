@@ -86,14 +86,63 @@ Two sweeps were run only after the frozen canonical result.
 
 **Delay.** With every other parameter fixed, delays 1–4 steps retain perfect selectivity; delay 0 and delays 5–8 lose it completely. The mechanism therefore has a finite timing band rather than being equivalent to arbitrary suppression.
 
-**Lateral spread.** Setting immediate-neighbor spread all the way to **0.0** leaves the result unchanged. Increasing it through 1.2 also leaves the result unchanged.
+**Lateral spread in the original one-lane assay.** Setting immediate-neighbor spread all the way to **0.0** leaves the result unchanged. Increasing it through 1.2 also leaves the result unchanged.
 
-That is an important negative result. This assay has **not** demonstrated a special role for Martinotti-like lateral topology. It has demonstrated a role for **activity-recruited, correctly timed local apical suppression**. The vortex/Martinotti interpretation remains a hypothesis requiring a spatial task in which lateral geometry itself is necessary.
+That is an important negative result. The original assay did **not** demonstrate a special role for Martinotti-like lateral topology. It demonstrated a role for **activity-recruited, correctly timed local apical suppression**.
+
+## Harder spatial fork: make geometry necessary
+
+A second, explicitly post-canonical toy removes that loophole. It uses two distinct nearby trajectories:
+
+```text
+episode lane   ---- E ---->
+                      |
+                      | generic spatial inhibitory kernel
+                      v
+schema lane    ---- S ---->
+```
+
+At an occupied position, the episode lane fires early. The competing schema lane presents its candidate later. The inhibitory rule receives **no competitor label**: its strength depends only on physical distance from the early episode event. At an episode gap there is no early event, so no wake is generated.
+
+With all original threshold/timing parameters unchanged:
+
+| competitor geometry | occupied schema intrusion | gap fill |
+|---|---:|---:|
+| adjacent, distance 1 | **0.000** | **1.000** |
+| distance 2 | 1.000 | 1.000 |
+| distance 3 | 1.000 | 1.000 |
+| distance 4 | 1.000 | 1.000 |
+| same-site-only inhibition | 1.000 | 1.000 |
+
+So in this constructed fork, **lateral geometry is causally necessary**: the competing trajectory has to lie inside the generic local spatial kernel. Same-site inhibition cannot touch it, and moving it farther away removes the effect.
+
+This still is not a biological finding or new inhibitory principle; it is classical local lateral inhibition embedded in a moving sequence problem. Its value is narrower: it shows that the vortex/Martinotti picture can be turned into a geometry-dependent computation without adding an explicit `suppress_competitor` variable.
 
 Machine-readable receipt: `results/wake_spike.json`.
 
 ## Interpretation boundary
 
-Even this pass shows only that **activity-recruited delayed local inhibition can implement a useful moving access mask in this constructed threshold model**. It does not show that Martinotti cells carry cortical vortices, that cortical waves arbitrate memory this way, or that the episode/schema decomposition is a biological mechanism.
+What the spike has earned:
 
-The next falsifier should therefore be spatial rather than another threshold sweep: construct competing trajectories in neighboring columns and ask whether a laterally propagating inhibitory field can bend/select the trajectory in a way same-site inhibition cannot.
+```text
+recent local activity
+    -> delayed inhibition
+    -> a finite susceptibility window
+    -> different effect on a later competing trajectory
+```
+
+And, in the harder fork:
+
+```text
+spatial adjacency
+    -> whether the competing trajectory falls inside that wake
+```
+
+What it has **not** earned:
+
+- that Martinotti cells carry cortical vortices;
+- that cortical spiral waves actually recruit this wake;
+- that this is how episodic versus schematic memory is arbitrated;
+- that SST/Martinotti circuitry is uniquely needed rather than one biological implementation of generic delayed lateral inhibition.
+
+The next serious step should leave hand-authored threshold slots behind: couple the wake to an actual propagating population wave and ask whether the moving inhibitory field bends or blocks a competing self-running trajectory without being told where the fork is.
