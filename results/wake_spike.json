@@ -1,0 +1,55 @@
+{
+  "status": "canonical plus post-canonical controls",
+  "branch": "spike/wake-behind-wave",
+  "frozen_runner_commit": "17b81890bc4f3baac0c6db639edbfdd7fb3b8144",
+  "canonical_seeds": [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111],
+  "evaluation": {
+    "pass": true,
+    "wake_seed_passes": 12,
+    "tonic_dual_job_seed_passes": 0,
+    "all_invariants": true,
+    "wake_selectivity": 1.0,
+    "spatial_shuffle_selectivity": 0.09259259259259256,
+    "temporal_shift_selectivity": 0.0
+  },
+  "summary": {
+    "wake": {
+      "mean_intrusion": 0.0,
+      "mean_gap_fill": 1.0
+    },
+    "tonic": {
+      "mean_intrusion": 0.0,
+      "mean_gap_fill": 0.0
+    },
+    "spatial_shuffle": {
+      "mean_intrusion": 0.9074074074074074,
+      "mean_gap_fill": 1.0
+    },
+    "temporal_shift": {
+      "mean_intrusion": 1.0,
+      "mean_gap_fill": 1.0
+    }
+  },
+  "postcanonical_controls": {
+    "delay_sweep": [
+      {"delay": 0, "intrusion": 1.0, "gap_fill": 1.0, "selectivity": 0.0},
+      {"delay": 1, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"delay": 2, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"delay": 3, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"delay": 4, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"delay": 5, "intrusion": 1.0, "gap_fill": 1.0, "selectivity": 0.0},
+      {"delay": 6, "intrusion": 1.0, "gap_fill": 1.0, "selectivity": 0.0},
+      {"delay": 7, "intrusion": 1.0, "gap_fill": 1.0, "selectivity": 0.0},
+      {"delay": 8, "intrusion": 1.0, "gap_fill": 1.0, "selectivity": 0.0}
+    ],
+    "neighbor_spread_sweep": [
+      {"neighbor_spread": 0.0, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"neighbor_spread": 0.1, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"neighbor_spread": 0.22, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"neighbor_spread": 0.4, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"neighbor_spread": 0.8, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0},
+      {"neighbor_spread": 1.2, "intrusion": 0.0, "gap_fill": 1.0, "selectivity": 1.0}
+    ],
+    "interpretation": "The canonical gate supports delayed activity-recruited apical suppression versus matched tonic and shuffled controls. The neighbor-spread sweep shows that lateral spread is not required in this assay, so the result does not establish a special computational role for Martinotti-like lateral topology. The delay sweep shows a finite useful timing band: delays 1-4 work, delay 0 and delays 5-8 do not."
+  }
+}
