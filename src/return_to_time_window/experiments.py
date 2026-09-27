@@ -52,7 +52,6 @@ def run_g1(seed: int, *, noise_sd: float = 0.30) -> dict:
     }
     expected = list(rep.sequences[0])
     result = {}
-    # Identical RNG seed gives the same noise tape in both arms.
     for name, controls in arms.items():
         tr = simulate_replay(W, duration_s, cfg, np.random.default_rng(seed + 20_000), external_drive=ext, controls=controls)
         score = _score_linear(tr, expected)
@@ -153,7 +152,6 @@ def _g3_trial(W, rep, seed, *, context_windows, veto_windows, rhythmic=True, ton
     controls = with_multiplicative_context(base, cg)
     vg = veto_gain(times, len(rep.tokens), veto_windows)
     if tonic_veto and veto_windows:
-        # Same integrated suppression, spread over 40 ms from the branch decision.
         w = veto_windows[0]
         area = max(0.0, w.end_s - w.start_s) * w.suppression
         dur = 0.040
@@ -179,9 +177,6 @@ def run_g3(seed: int) -> dict:
     W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
     W_before = W.tobytes()
     D, H = rep.token_to_id["D"], rep.token_to_id["H"]
-
-    # Relevant arm: D is initially favoured; at the decision window context flips to H
-    # while D is vetoed during the open phase. No new sensory cue is added.
     relevant_context = [ContextWindow(0.000, 0.020, (D,), 3.0), ContextWindow(0.020, 0.120, (H,), 0.5)]
     relevant_veto = [VetoWindow(0.020, 0.030, (D,), 1.0)]
     tr_rel, rel = _g3_trial(W, rep, seed + 40_000, context_windows=relevant_context, veto_windows=relevant_veto)
@@ -192,20 +187,13 @@ def run_g3(seed: int) -> dict:
     rel["restart_latency_s"] = float(times[h_cross[0]] - 0.030) if len(h_cross) else float(times[-1] - 0.030)
     rel["new_external_cue"] = False
 
-    # Irrelevant-phase control: keep D context unchanged and put an equal veto wholly in dead time.
     d_context = [ContextWindow(0.000, 0.120, (D,), 3.0)]
     irrelevant_veto = [VetoWindow(0.030, 0.040, (D,), 1.0)]
     tr_irr, irr = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=irrelevant_veto)
     tr_base, base = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=[])
     irr["effect"] = float(abs(irr["selectivity_signed_H_minus_D"] - base["selectivity_signed_H_minus_D"]))
 
-    tr_tonic, tonic = _g3_trial(
-        W, rep, seed + 40_000, context_windows=relevant_context,
-        veto_windows=relevant_veto, tonic_veto=True,
-    )
-
-    # Full reset means the ongoing state is erased at the intervention and no new cue is supplied.
-    # In this deterministic replacement arm it therefore cannot spontaneously recover the branch.
+    _, tonic = _g3_trial(W, rep, seed + 40_000, context_windows=relevant_context, veto_windows=relevant_veto, tonic_veto=True)
     full_reset_latency = float(times[-1] - 0.030)
     return {
         "relevant": rel,
@@ -213,4 +201,42 @@ def run_g3(seed: int) -> dict:
         "tonic_matched": tonic,
         "full_reset": {"winner": "none", "restart_latency_s": full_reset_latency},
         "weights_unchanged": bool(W.tobytes() == W_before),
+    }
+
+
+def run_g4(seed: int) -> dict:
+    from .publication import PublicationBlock, InternalShunt, publication_mask, internal_shunt, with_publication, with_internal_shunt
+    from .sequence import identity_controls
+    from .metrics import front_position
+
+    n = 20
+    rep = encode_repertoire([[str(i) for i in range(n)]])
+    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
+    cfg = ReplayConfig()
+    duration = 0.45
+    steps = int(duration / cfg.dt_s)
+    times = np.arange(steps) * cfg.dt_s
+    ext = cue_drive(steps, n, cfg.dt_s, [(0.0, 0.05, 0, 1.5)])
+    base = identity_controls(steps, n)
+    block = PublicationBlock(0.04, 0.10)
+    silent_controls = with_publication(base, publication_mask(times, [block]))
+    shunt_controls = with_internal_shunt(base, internal_shunt(times, [InternalShunt(0.04, 0.10)]))
+
+    tr_base = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=base)
+    tr_silent = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=silent_controls)
+    tr_shunt = simulate_replay(W, duration, cfg, np.random.default_rng(seed + 50_000), external_drive=ext, controls=shunt_controls)
+    expected = list(rep.sequences[0])
+    f_silent = front_position(tr_silent.internal, expected)
+    f_shunt = front_position(tr_shunt.internal, expected)
+    i0 = np.searchsorted(times, block.start_s)
+    i1 = max(i0, np.searchsorted(times, block.end_s) - 1)
+    release = min(len(times) - 1, np.searchsorted(times, block.end_s + cfg.dt_s))
+    advanced = max(0, int(f_silent[i1] - f_silent[i0]))
+    return {
+        "items_advanced_during_silence": float(advanced),
+        "release_front": int(f_silent[release]),
+        "shunt_release_front": int(f_shunt[release]),
+        "shunt_lag": int(f_silent[release] - f_shunt[release]),
+        "internal_trace_equal": bool(np.array_equal(tr_base.internal, tr_silent.internal)),
+        "public_silent": bool(np.all(tr_silent.public[:, (times >= block.start_s) & (times < block.end_s)] == 0.0)),
     }
