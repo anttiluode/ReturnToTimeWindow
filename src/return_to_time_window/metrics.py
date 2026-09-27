@@ -33,3 +33,29 @@ def front_position(activity: np.ndarray, expected: list[int], threshold: float =
             if locations:
                 front[t] = max(locations)
     return front
+
+
+def secondary_wave_events(
+    activity: np.ndarray,
+    expected: list[int],
+    threshold: float = 0.2,
+    behind_by: int = 5,
+) -> int:
+    """Count threshold crossings that ignite well behind the furthest front reached so far."""
+    arr = np.asarray(activity)
+    pos = {u: i for i, u in enumerate(expected)}
+    prev = np.zeros(arr.shape[0], dtype=bool)
+    furthest = -1
+    count = 0
+    for t in range(arr.shape[1]):
+        now = arr[:, t] > threshold
+        rising = np.flatnonzero(now & ~prev)
+        for unit in rising:
+            p = pos.get(int(unit))
+            if p is not None and furthest >= 0 and p <= furthest - behind_by:
+                count += 1
+        active_positions = [pos[int(u)] for u in np.flatnonzero(now) if int(u) in pos]
+        if active_positions:
+            furthest = max(furthest, max(active_positions))
+        prev = now
+    return count
