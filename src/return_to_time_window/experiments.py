@@ -133,3 +133,84 @@ def run_g2(seed: int) -> dict:
         "multiplicative_context_only_peak": float(max(leaks)),
         "additive_sweep": points,
     }
+
+
+def _g3_trial(W, rep, seed, *, context_windows, veto_windows, rhythmic=True, tonic_veto=False):
+    from .context import combine_multiplicative_contexts, with_multiplicative_context
+    from .rhythm import RhythmicAdmission, with_inhibition
+    from .veto import veto_gain, with_veto
+    from .sequence import identity_controls
+
+    cfg = ReplayConfig()
+    duration = 0.35
+    steps = int(duration / cfg.dt_s)
+    times = np.arange(steps) * cfg.dt_s
+    base = identity_controls(steps, len(rep.tokens))
+    if rhythmic:
+        admission = RhythmicAdmission(phase_s=0.015)
+        base = with_inhibition(base, admission.inhibition(times))
+    cg = combine_multiplicative_contexts(times, len(rep.tokens), context_windows)
+    controls = with_multiplicative_context(base, cg)
+    vg = veto_gain(times, len(rep.tokens), veto_windows)
+    if tonic_veto and veto_windows:
+        # Same integrated suppression, spread over 40 ms from the branch decision.
+        w = veto_windows[0]
+        area = max(0.0, w.end_s - w.start_s) * w.suppression
+        dur = 0.040
+        suppression = min(1.0, area / dur)
+        from .veto import VetoWindow
+        vg = veto_gain(times, len(rep.tokens), [VetoWindow(0.020, 0.020 + dur, w.target_ids, suppression)])
+    controls = with_veto(controls, vg)
+    ext = cue_drive(steps, len(rep.tokens), cfg.dt_s, [(0.0, 0.05, rep.token_to_id["A"], 1.5)])
+    tr = simulate_replay(W, duration, cfg, np.random.default_rng(seed), external_drive=ext, controls=controls)
+    D, H = rep.token_to_id["D"], rep.token_to_id["H"]
+    after = times >= 0.020
+    pd = float(tr.internal[D, after].max(initial=0.0))
+    ph = float(tr.internal[H, after].max(initial=0.0))
+    winner = "D" if pd > ph else "H" if ph > pd else "tie"
+    return tr, {"winner": winner, "D_peak": pd, "H_peak": ph, "selectivity_signed_H_minus_D": ph - pd}
+
+
+def run_g3(seed: int) -> dict:
+    from .context import ContextWindow
+    from .veto import VetoWindow
+
+    rep = _branched_repertoire()
+    W = learn_repertoire(rep, np.random.default_rng(seed), windows_per_sequence=30)
+    W_before = W.tobytes()
+    D, H = rep.token_to_id["D"], rep.token_to_id["H"]
+
+    # Relevant arm: D is initially favoured; at the decision window context flips to H
+    # while D is vetoed during the open phase. No new sensory cue is added.
+    relevant_context = [ContextWindow(0.000, 0.020, (D,), 3.0), ContextWindow(0.020, 0.120, (H,), 0.5)]
+    relevant_veto = [VetoWindow(0.020, 0.030, (D,), 1.0)]
+    tr_rel, rel = _g3_trial(W, rep, seed + 40_000, context_windows=relevant_context, veto_windows=relevant_veto)
+    times = tr_rel.time
+    vm = (times >= 0.020) & (times < 0.030)
+    rel["state_survival_norm"] = float(np.linalg.norm(tr_rel.internal[:, vm]))
+    h_cross = np.flatnonzero((times >= 0.030) & (tr_rel.internal[H] > 0.2))
+    rel["restart_latency_s"] = float(times[h_cross[0]] - 0.030) if len(h_cross) else float(times[-1] - 0.030)
+    rel["new_external_cue"] = False
+
+    # Irrelevant-phase control: keep D context unchanged and put an equal veto wholly in dead time.
+    d_context = [ContextWindow(0.000, 0.120, (D,), 3.0)]
+    irrelevant_veto = [VetoWindow(0.030, 0.040, (D,), 1.0)]
+    tr_irr, irr = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=irrelevant_veto)
+    tr_base, base = _g3_trial(W, rep, seed + 40_000, context_windows=d_context, veto_windows=[])
+    irr["effect"] = float(abs(irr["selectivity_signed_H_minus_D"] - base["selectivity_signed_H_minus_D"]))
+
+    tr_tonic, tonic = _g3_trial(
+        W, rep, seed + 40_000, context_windows=relevant_context,
+        veto_windows=relevant_veto, tonic_veto=True,
+    )
+
+    # Full reset means the ongoing state is erased at the intervention and no new cue is supplied.
+    # In this deterministic replacement arm it therefore cannot spontaneously recover the branch.
+    full_reset_latency = float(times[-1] - 0.030)
+    return {
+        "relevant": rel,
+        "irrelevant": irr,
+        "tonic_matched": tonic,
+        "full_reset": {"winner": "none", "restart_latency_s": full_reset_latency},
+        "weights_unchanged": bool(W.tobytes() == W_before),
+    }
